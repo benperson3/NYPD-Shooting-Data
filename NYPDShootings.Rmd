@@ -1,0 +1,121 @@
+---
+title: "MyFirstRmd"
+author: "Ben Schwarz"
+date: "10/27/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+We'll start by importing libraries and reading in the data for the NYPD
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(RColorBrewer)
+library(ggplot2)
+url_in <- "https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD"
+```
+
+## R Markdown
+We've set up the url now, we can import in the data and start working with it.
+We want to set it into a new vector, main.data
+Then we want to do some processing and tidying
+  I changed the occur date type to date
+
+
+```{r}
+main.data <- read_csv(url_in)
+main.data <- main.data %>% mutate(OCCUR_DATE = mdy(OCCUR_DATE))
+```
+
+Next, we want to do some groupings of data. We can make new sets that give us the data by borough or precinct
+
+```{r}
+bcounts <- table(main.data['BORO'])
+pcounts <- table(main.data['PRECINCT'])
+barplot(bcounts, main="Fig 1. Shootings by Borough", ylim=c(0,12000),xlab="Borough",ylab="Shootings")
+barplot(pcounts, main="Fig 2. Shootings by Precinct", ylim=c(0,1600),xlab="Precinct Number",ylab="Shootings")
+```
+
+Now we can start reviewing where the shootings are occurring, in the boroughts and the precincts. But lets look at bit more in depth at the data. We can look at the victims, by gender and race.
+
+```{r}
+barcol <- brewer.pal(3, "Set1")
+gdata <- select(main.data, VIC_SEX, BORO)
+gtable <- table(gdata)
+rownames(gtable) <- c("Female","Male","Unknown")
+barplot(gtable, main="Fig 3. Shootings by Gender and Borough", ylim=c(0,10000), col=barcol, beside=TRUE, legend=TRUE, xlab="Borough",ylab="Shootings",args.legend=list(title="Gender"))
+
+barcol <- brewer.pal(7, "Set1")
+rdata <- select(main.data, VIC_RACE, BORO)
+rtable <- table(rdata)
+barplot(rtable, main="Fig 4. Shootings by Race and Borough", ylim=c(0,10000), col=barcol, beside=TRUE, legend=TRUE, xlab="Borough",ylab="Shootings",args.legend=list(title="Race"))
+```
+
+We can see that the vast majority of the victims are males. We can also start to note other info about the victims, and see if we see patterns by borough. We want to see the victims by age as well.
+
+```{r}
+barcol <- brewer.pal(6, "Set1")
+adata <- select(main.data, VIC_AGE_GROUP, BORO)
+atable <- table(adata)
+barplot(atable, main="Fig 5. Shootings by Age and Borough", ylim=c(0,5000),col=barcol, beside=TRUE, legend=TRUE, xlab="Borough",ylab="Shootings",args.legend=list(title="Age Group"))
+```
+
+Now we want to look at the data as it has changed over time. For this, we're going to sum the data by year and look at the trends.
+
+```{r}
+tdata <- select(main.data, OCCUR_DATE)
+tdata <- tdata %>% group_by(year = lubridate::floor_date(OCCUR_DATE, "year")) %>%
+  tally()
+years = c(seq(2006,2020))
+yrly.df <- data.frame(years, tdata)
+ggplot(data = yrly.df, aes(x=years))+geom_line(aes(x=years, y=n))+xlab("Year (2006-2020)")+ylab("Shootings")+ggtitle("Fig 6. Shootings by Year")
+```
+
+For this, we're going to sum all of the shootings in each year in each borough, and then plot these.
+
+```{r}
+tdata <- select(main.data, OCCUR_DATE, BORO)
+ttable <- table(tdata)
+tdata <- tdata %>% group_by(BORO, year = lubridate::floor_date(OCCUR_DATE, "year")) %>%
+  tally()
+years = c(seq(2006,2020))
+brxdata <- tdata %>% filter(BORO=="BRONX")
+brxdata <- brxdata[,3]
+bkndata <- tdata %>% filter(BORO=="BROOKLYN")
+bkndata <- bkndata[,3]
+mhndata <- tdata %>% filter(BORO=="MANHATTAN")
+mhndata <- mhndata[,3]
+qnsdata <- tdata %>% filter(BORO=="QUEENS")
+qnsdata <- qnsdata[,3]
+stidata <- tdata %>% filter(BORO=="STATEN ISLAND")
+stidata <- stidata[,3]
+yrly.df <- data.frame(years, brxdata, bkndata, mhndata, qnsdata, stidata)
+ggplot(data = yrly.df, aes(x=years),main="Fig 7. Shootings by Year and Borough")+geom_line(aes(x=years, y=n, color="Bronx"))+geom_line(aes(x=years, y=n.1, color="Brooklyn"))+geom_line(aes(x=years, y=n.2, color="Manhattan"))+geom_line(aes(x=years, y=n.3, color="Queens"))+geom_line(aes(x=years, y=n.4, color="Staten Island"))+xlab("Year (2006-2020)")+ylab("Shootings")+ggtitle("Shootings by Year and Borough")+labs(colour="Borough")
+```
+
+Lastly, we want to model how things are looking in the future. We will use a basic linear model for this.
+
+```{r}
+tdata <- select(main.data, OCCUR_DATE)
+tdata <- tdata %>% group_by(year = lubridate::floor_date(OCCUR_DATE, "year")) %>% 
+  tally()
+tdata <- data.frame(years, tdata[,2])
+mod <- lm(years ~ n, data = tdata)
+plot(tdata,ylim=c(0,2500),xlim=c(2006,2030),main="Fig 8. Shootings vs Predicted Values",xlab="Years (2006 - 2030)",ylab="Shootings")
+abline(mod,col="red")
+```
+
+From our predictions based on a linear model, we can see that the rate of shootings is nearly constant. It's possible that this is highly affected by the outlier year of 2020. If we excluded this year, it's likely the model would show more of a decline.
+
+Review of data:
+
+First, let's consider the bias in the data. These statistics originate from the NYPD. This is not a neutral party on crime in the city, so it is possible there may be some bias baked into the data. Also, we would want to know more about how this was collected. Are all the stats about the victims self-reported? Given that there may be some uncertainty in the perpetrator, what level of trust can we have in these values? For these reasons, I decided not to study the perpetrator data, but this also reflects my own bias. To limit my bias, I wanted to compare to values that I could be more certain of, like the borough and the year.
+
+After my analysis and modeling, my main focus was on data that seemed to be outlier. An important reference would be the population statistics for NYC. We would want to compare the victims statistics to the general population. For the total counts, gender, race, and age group, we would want to review the population to see if there are imbalances. For example, in figure 3, we can see that the vast majority of victims are male, even though they likely only make up ~50% of the population of each borough. This might be something that the NYPD or a public health official would want to study. 
+
+One other notable part of the data is the rise in shootings in 2020. In figures 6 and 7, we see this sharp rise in the count, across all five boroughs. For many reasons, 2020 was a unique year, and so this may explain the discrepancy. This may also be worth further study, and it's possible that it should be removed from the data set for the purposes of studying long-term trends.
